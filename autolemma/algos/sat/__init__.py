@@ -1,0 +1,1 @@
+from .bruteforce import solve_cnf as brute_solve
