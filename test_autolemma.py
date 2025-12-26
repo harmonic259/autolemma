@@ -1,5 +1,5 @@
 from autolemma.core import Var, And, Or, Not, tseitin_cnf, Const, Implies, Iff
-from autolemma.algos.sat import brute_solve
+from autolemma.algos.sat import bruteforce_solve, sat2_solve, dpll_solve, dpll_plus_solve
 
 
 
@@ -7,36 +7,30 @@ from autolemma.algos.sat import brute_solve
 A = Var("A")
 B = Var("B")
 C = Var("C")
-f = Or(Not(And(A, B, C)), C)
-f2 = f.substitute({"C": Const(True)})
+f = And(Or(A, B), C)
 
-print("Formula:", f.nnf())
+print("Formula:", f)
+print("NNF Formula:", f.nnf())
 
 clauses, vmap = tseitin_cnf(f, start_id=1)
-
-print("Bruteforce SAT solver:")
-variables = list(vmap.values())
-print(brute_solve(clauses, variables))
-
-print("\nTseitin CNF (clauses as lists of ints):")
-for cl in clauses:
-    print(" ", cl)
 
 print("\nVariable mapping (name -> id):")
 for name, vid in sorted(vmap.items(), key=lambda kv: kv[1]):
     print(" ", name, "->", vid)
 
-# quick sanity checks
-assert A.free_vars() == {"A"}
-assert f.free_vars() == {"A", "B", "C"}
+print("\nTseitin CNF (clauses as lists of ints):")
+for cl in clauses:
+    print(" ", cl)
 
-# substitution example
 
-print("\nAfter substitution C -> True:", f2)
+print("Bruteforce SAT solver:")
+print(bruteforce_solve(clauses))
 
-# some additional small examples
-phi = Implies(And(A, B), C)   # (A ∧ B) -> C
-psi = Iff(A, B)               # A ↔ B
-print("\nMore formulas:", phi, psi)
+print("DFS SAT solver:")
+print(sat2_solve(clauses))
 
-print("\nBasic tests passed.")
+print("DPLL SAT solver:")
+print(dpll_solve(clauses))
+
+print("DPLL+ SAT solver:")
+print(dpll_plus_solve(clauses))
