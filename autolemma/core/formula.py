@@ -24,6 +24,12 @@ class Formula:
     def __repr__(self):
         return str(self)
 
+    def positions(self) -> Set[str]:
+        raise NotImplementedError
+
+    def subformula_at(self, pos: str) -> "Formula":
+        raise NotImplementedError
+
 
 @dataclass(frozen=True)
 class Var(Formula):
@@ -41,6 +47,14 @@ class Var(Formula):
     def __str__(self):
         return self.name
 
+    def positions(self) -> Set[str]:
+        return {""}
+
+    def subformula_at(self, pos: str) -> Formula:
+        if pos == "":
+            return self
+        raise ValueError(f"Invalid position {pos} for Var")
+
 
 @dataclass(frozen=True)
 class Const(Formula):
@@ -57,6 +71,14 @@ class Const(Formula):
 
     def __str__(self):
         return "⊤" if self.value else "⊥"
+
+    def positions(self) -> Set[str]:
+        return {""}
+
+    def subformula_at(self, pos: str) -> Formula:
+        if pos == "":
+            return self
+        raise ValueError(f"Invalid position {pos} for Const")
 
 
 @dataclass(frozen=True)
@@ -90,6 +112,17 @@ class Not(Formula):
     def __str__(self):
         return f"¬({self.child})"
 
+    def positions(self) -> Set[str]:
+        child_positions = self.child.positions()
+        return {""} | {"1." + p for p in child_positions}
+
+    def subformula_at(self, pos: str) -> Formula:
+        if pos == "":
+            return self
+        if pos.startswith("1."):
+            return self.child.subformula_at(pos[2:])
+        raise ValueError(f"Invalid position {pos} for Not")
+
 
 @dataclass(frozen=True)
 class And(Formula):
@@ -118,6 +151,23 @@ class And(Formula):
 
     def __str__(self):
         return "(" + " ∧ ".join(str(c) for c in self.children) + ")"
+
+    def positions(self) -> Set[str]:
+        all_positions = {""}
+        for i, child in enumerate(self.children, start=1):
+            child_positions = child.positions()
+            all_positions.update({f"{i}." + p for p in child_positions})
+        return all_positions
+
+    def subformula_at(self, pos: str) -> Formula:
+        if pos == "":
+            return self
+        parts = pos.split(".", 1)
+        if len(parts) == 2 and parts[0].isdigit():
+            idx = int(parts[0]) - 1
+            if 0 <= idx < len(self.children):
+                return self.children[idx].subformula_at(parts[1])
+        raise ValueError(f"Invalid position {pos} for And")
 
 
 @dataclass(frozen=True)
@@ -148,6 +198,23 @@ class Or(Formula):
     def __str__(self):
         return "(" + " ∨ ".join(str(c) for c in self.children) + ")"
 
+    def positions(self) -> Set[str]:
+        all_positions = {""}
+        for i, child in enumerate(self.children, start=1):
+            child_positions = child.positions()
+            all_positions.update({f"{i}." + p for p in child_positions})
+        return all_positions
+
+    def subformula_at(self, pos: str) -> Formula:
+        if pos == "":
+            return self
+        parts = pos.split(".", 1)
+        if len(parts) == 2 and parts[0].isdigit():
+            idx = int(parts[0]) - 1
+            if 0 <= idx < len(self.children):
+                return self.children[idx].subformula_at(parts[1])
+        raise ValueError(f"Invalid position {pos} for Or")
+
 
 @dataclass(frozen=True)
 class Implies(Formula):
@@ -166,6 +233,20 @@ class Implies(Formula):
 
     def __str__(self):
         return f"({self.left} → {self.right})"
+
+    def positions(self) -> Set[str]:
+        left_positions = self.left.positions()
+        right_positions = self.right.positions()
+        return {""} | {"1." + p for p in left_positions} | {"2." + p for p in right_positions}
+
+    def subformula_at(self, pos: str) -> Formula:
+        if pos == "":
+            return self
+        if pos.startswith("1."):
+            return self.left.subformula_at(pos[2:])
+        if pos.startswith("2."):
+            return self.right.subformula_at(pos[2:])
+        raise ValueError(f"Invalid position {pos} for Implies")
 
 
 @dataclass(frozen=True)
@@ -186,6 +267,20 @@ class Iff(Formula):
 
     def __str__(self):
         return f"({self.left} ↔ {self.right})"
+
+    def positions(self) -> Set[str]:
+        left_positions = self.left.positions()
+        right_positions = self.right.positions()
+        return {""} | {"1." + p for p in left_positions} | {"2." + p for p in right_positions}
+
+    def subformula_at(self, pos: str) -> Formula:
+        if pos == "":
+            return self
+        if pos.startswith("1."):
+            return self.left.subformula_at(pos[2:])
+        if pos.startswith("2."):
+            return self.right.subformula_at(pos[2:])
+        raise ValueError(f"Invalid position {pos} for Iff")
 
 
 

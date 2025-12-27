@@ -11,6 +11,9 @@ f = And(Or(A, B), C)
 
 print("Formula:", f)
 print("NNF Formula:", f.nnf())
+print("Subformulas:")
+for pos in sorted(f.positions()):
+    print(" ", pos, ":", f.subformula_at(pos))
 
 clauses, vmap = tseitin_cnf(f, start_id=1)
 
