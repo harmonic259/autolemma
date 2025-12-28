@@ -29,6 +29,13 @@ class Formula:
 
     def subformula_at(self, pos: str) -> "Formula":
         raise NotImplementedError
+    
+    def formula_size(self) -> int:
+        """Return the size of the formula"""
+        return len(self.positions())
+
+    def replace_at_pos(self, pos: str, new_formula: "Formula") -> "Formula":
+        raise NotImplementedError
 
 
 @dataclass(frozen=True)
@@ -55,6 +62,11 @@ class Var(Formula):
             return self
         raise ValueError(f"Invalid position {pos} for Var")
 
+    def replace_at_pos(self, pos: str, new_formula: Formula) -> Formula:
+        if pos == "":
+            return new_formula
+        raise ValueError(f"Invalid position {pos} for Var")
+
 
 @dataclass(frozen=True)
 class Const(Formula):
@@ -78,6 +90,11 @@ class Const(Formula):
     def subformula_at(self, pos: str) -> Formula:
         if pos == "":
             return self
+        raise ValueError(f"Invalid position {pos} for Const")
+
+    def replace_at_pos(self, pos: str, new_formula: Formula) -> Formula:
+        if pos == "":
+            return new_formula
         raise ValueError(f"Invalid position {pos} for Const")
 
 
@@ -121,6 +138,13 @@ class Not(Formula):
             return self
         if pos.startswith("1."):
             return self.child.subformula_at(pos[2:])
+        raise ValueError(f"Invalid position {pos} for Not")
+
+    def replace_at_pos(self, pos: str, new_formula: Formula) -> Formula:
+        if pos == "":
+            return new_formula
+        if pos.startswith("1."):
+            return Not(self.child.replace_at_pos(pos[2:], new_formula))
         raise ValueError(f"Invalid position {pos} for Not")
 
 
@@ -169,6 +193,18 @@ class And(Formula):
                 return self.children[idx].subformula_at(parts[1])
         raise ValueError(f"Invalid position {pos} for And")
 
+    def replace_at_pos(self, pos: str, new_formula: Formula) -> Formula:
+        if pos == "":
+            return new_formula
+        parts = pos.split(".", 1)
+        if len(parts) == 2 and parts[0].isdigit():
+            idx = int(parts[0]) - 1
+            if 0 <= idx < len(self.children):
+                new_children = list(self.children)
+                new_children[idx] = self.children[idx].replace_at_pos(parts[1], new_formula)
+                return And(*new_children)
+        raise ValueError(f"Invalid position {pos} for And")
+
 
 @dataclass(frozen=True)
 class Or(Formula):
@@ -215,6 +251,18 @@ class Or(Formula):
                 return self.children[idx].subformula_at(parts[1])
         raise ValueError(f"Invalid position {pos} for Or")
 
+    def replace_at_pos(self, pos: str, new_formula: Formula) -> Formula:
+        if pos == "":
+            return new_formula
+        parts = pos.split(".", 1)
+        if len(parts) == 2 and parts[0].isdigit():
+            idx = int(parts[0]) - 1
+            if 0 <= idx < len(self.children):
+                new_children = list(self.children)
+                new_children[idx] = self.children[idx].replace_at_pos(parts[1], new_formula)
+                return Or(*new_children)
+        raise ValueError(f"Invalid position {pos} for Or")
+
 
 @dataclass(frozen=True)
 class Implies(Formula):
@@ -248,6 +296,15 @@ class Implies(Formula):
             return self.right.subformula_at(pos[2:])
         raise ValueError(f"Invalid position {pos} for Implies")
 
+    def replace_at_pos(self, pos: str, new_formula: Formula) -> Formula:
+        if pos == "":
+            return new_formula
+        if pos.startswith("1."):
+            return Implies(self.left.replace_at_pos(pos[2:], new_formula), self.right)
+        if pos.startswith("2."):
+            return Implies(self.left, self.right.replace_at_pos(pos[2:], new_formula))
+        raise ValueError(f"Invalid position {pos} for Implies")
+
 
 @dataclass(frozen=True)
 class Iff(Formula):
@@ -261,7 +318,7 @@ class Iff(Formula):
         return Iff(self.left.substitute(mapping), self.right.substitute(mapping))
 
     def nnf(self) -> Formula:
-        # A ↔ B == (A ∧ B) ∨ (¬A ∧ ¬B)
+        # A ↔ B == (A -> B) ∧ (B -> A)
         return Or(And(self.left.nnf(), self.right.nnf()),
                   And(Not(self.left).nnf(), Not(self.right).nnf()))
 
@@ -280,6 +337,15 @@ class Iff(Formula):
             return self.left.subformula_at(pos[2:])
         if pos.startswith("2."):
             return self.right.subformula_at(pos[2:])
+        raise ValueError(f"Invalid position {pos} for Iff")
+
+    def replace_at_pos(self, pos: str, new_formula: Formula) -> Formula:
+        if pos == "":
+            return new_formula
+        if pos.startswith("1."):
+            return Iff(self.left.replace_at_pos(pos[2:], new_formula), self.right)
+        if pos.startswith("2."):
+            return Iff(self.left, self.right.replace_at_pos(pos[2:], new_formula))
         raise ValueError(f"Invalid position {pos} for Iff")
 
 

@@ -14,6 +14,12 @@ print("NNF Formula:", f.nnf())
 print("Subformulas:")
 for pos in sorted(f.positions()):
     print(" ", pos, ":", f.subformula_at(pos))
+print("size:", f.formula_size())
+
+X = Var("X")
+print("Replace X with all subformulas of f:")
+for pos in sorted(f.positions()):
+    print(" ", pos, ":", f.replace_at_pos(pos, X))
 
 clauses, vmap = tseitin_cnf(f, start_id=1)
 
