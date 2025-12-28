@@ -24,17 +24,17 @@ class Formula:
     def __repr__(self):
         return str(self)
 
-    def positions(self) -> Set[str]:
+    def positions(self) -> List[List[int]]:
         raise NotImplementedError
 
-    def subformula_at(self, pos: str) -> "Formula":
+    def subformula_at(self, pos: List[int]) -> "Formula":
         raise NotImplementedError
     
     def formula_size(self) -> int:
         """Return the size of the formula"""
         return len(self.positions())
 
-    def replace_at_pos(self, pos: str, new_formula: "Formula") -> "Formula":
+    def replace_at_pos(self, pos: List[int], new_formula: "Formula") -> "Formula":
         raise NotImplementedError
 
 
@@ -54,16 +54,16 @@ class Var(Formula):
     def __str__(self):
         return self.name
 
-    def positions(self) -> Set[str]:
-        return {""}
+    def positions(self) -> List[List[int]]:
+        return [[]]
 
-    def subformula_at(self, pos: str) -> Formula:
-        if pos == "":
+    def subformula_at(self, pos: List[int]) -> Formula:
+        if pos == []:
             return self
         raise ValueError(f"Invalid position {pos} for Var")
 
-    def replace_at_pos(self, pos: str, new_formula: Formula) -> Formula:
-        if pos == "":
+    def replace_at_pos(self, pos: List[int], new_formula: Formula) -> Formula:
+        if pos == []:
             return new_formula
         raise ValueError(f"Invalid position {pos} for Var")
 
@@ -84,16 +84,16 @@ class Const(Formula):
     def __str__(self):
         return "⊤" if self.value else "⊥"
 
-    def positions(self) -> Set[str]:
-        return {""}
+    def positions(self) -> List[List[int]]:
+        return [[]]
 
-    def subformula_at(self, pos: str) -> Formula:
-        if pos == "":
+    def subformula_at(self, pos: List[int]) -> Formula:
+        if pos == []:
             return self
         raise ValueError(f"Invalid position {pos} for Const")
 
-    def replace_at_pos(self, pos: str, new_formula: Formula) -> Formula:
-        if pos == "":
+    def replace_at_pos(self, pos: List[int], new_formula: Formula) -> Formula:
+        if pos == []:
             return new_formula
         raise ValueError(f"Invalid position {pos} for Const")
 
@@ -129,22 +129,22 @@ class Not(Formula):
     def __str__(self):
         return f"¬({self.child})"
 
-    def positions(self) -> Set[str]:
+    def positions(self) -> List[List[int]]:
         child_positions = self.child.positions()
-        return {""} | {"1." + p for p in child_positions}
+        return [[]] + [[1] + p for p in child_positions]
 
-    def subformula_at(self, pos: str) -> Formula:
-        if pos == "":
+    def subformula_at(self, pos: List[int]) -> Formula:
+        if pos == []:
             return self
-        if pos.startswith("1."):
-            return self.child.subformula_at(pos[2:])
+        if pos[0] == 1:
+            return self.child.subformula_at(pos[1:])
         raise ValueError(f"Invalid position {pos} for Not")
 
-    def replace_at_pos(self, pos: str, new_formula: Formula) -> Formula:
-        if pos == "":
+    def replace_at_pos(self, pos: List[int], new_formula: Formula) -> Formula:
+        if pos == []:
             return new_formula
-        if pos.startswith("1."):
-            return Not(self.child.replace_at_pos(pos[2:], new_formula))
+        if pos[0] == 1:
+            return Not(self.child.replace_at_pos(pos[1:], new_formula))
         raise ValueError(f"Invalid position {pos} for Not")
 
 
@@ -176,33 +176,29 @@ class And(Formula):
     def __str__(self):
         return "(" + " ∧ ".join(str(c) for c in self.children) + ")"
 
-    def positions(self) -> Set[str]:
-        all_positions = {""}
+    def positions(self) -> List[List[int]]:
+        all_positions = [[]]
         for i, child in enumerate(self.children, start=1):
             child_positions = child.positions()
-            all_positions.update({f"{i}." + p for p in child_positions})
+            all_positions.extend([[i] + p for p in child_positions])
         return all_positions
 
-    def subformula_at(self, pos: str) -> Formula:
-        if pos == "":
+    def subformula_at(self, pos: List[int]) -> Formula:
+        if pos == []:
             return self
-        parts = pos.split(".", 1)
-        if len(parts) == 2 and parts[0].isdigit():
-            idx = int(parts[0]) - 1
-            if 0 <= idx < len(self.children):
-                return self.children[idx].subformula_at(parts[1])
+        idx = pos[0] - 1
+        if 0 <= idx < len(self.children):
+            return self.children[idx].subformula_at(pos[1:])
         raise ValueError(f"Invalid position {pos} for And")
 
-    def replace_at_pos(self, pos: str, new_formula: Formula) -> Formula:
-        if pos == "":
+    def replace_at_pos(self, pos: List[int], new_formula: Formula) -> Formula:
+        if pos == []:
             return new_formula
-        parts = pos.split(".", 1)
-        if len(parts) == 2 and parts[0].isdigit():
-            idx = int(parts[0]) - 1
-            if 0 <= idx < len(self.children):
-                new_children = list(self.children)
-                new_children[idx] = self.children[idx].replace_at_pos(parts[1], new_formula)
-                return And(*new_children)
+        idx = pos[0] - 1
+        if 0 <= idx < len(self.children):
+            new_children = list(self.children)
+            new_children[idx] = self.children[idx].replace_at_pos(pos[1:], new_formula)
+            return And(*new_children)
         raise ValueError(f"Invalid position {pos} for And")
 
 
@@ -234,33 +230,29 @@ class Or(Formula):
     def __str__(self):
         return "(" + " ∨ ".join(str(c) for c in self.children) + ")"
 
-    def positions(self) -> Set[str]:
-        all_positions = {""}
+    def positions(self) -> List[List[int]]:
+        all_positions = [[]]
         for i, child in enumerate(self.children, start=1):
             child_positions = child.positions()
-            all_positions.update({f"{i}." + p for p in child_positions})
+            all_positions.extend([[i] + p for p in child_positions])
         return all_positions
 
-    def subformula_at(self, pos: str) -> Formula:
-        if pos == "":
+    def subformula_at(self, pos: List[int]) -> Formula:
+        if pos == []:
             return self
-        parts = pos.split(".", 1)
-        if len(parts) == 2 and parts[0].isdigit():
-            idx = int(parts[0]) - 1
-            if 0 <= idx < len(self.children):
-                return self.children[idx].subformula_at(parts[1])
+        idx = pos[0] - 1
+        if 0 <= idx < len(self.children):
+            return self.children[idx].subformula_at(pos[1:])
         raise ValueError(f"Invalid position {pos} for Or")
 
-    def replace_at_pos(self, pos: str, new_formula: Formula) -> Formula:
-        if pos == "":
+    def replace_at_pos(self, pos: List[int], new_formula: Formula) -> Formula:
+        if pos == []:
             return new_formula
-        parts = pos.split(".", 1)
-        if len(parts) == 2 and parts[0].isdigit():
-            idx = int(parts[0]) - 1
-            if 0 <= idx < len(self.children):
-                new_children = list(self.children)
-                new_children[idx] = self.children[idx].replace_at_pos(parts[1], new_formula)
-                return Or(*new_children)
+        idx = pos[0] - 1
+        if 0 <= idx < len(self.children):
+            new_children = list(self.children)
+            new_children[idx] = self.children[idx].replace_at_pos(pos[1:], new_formula)
+            return Or(*new_children)
         raise ValueError(f"Invalid position {pos} for Or")
 
 
@@ -282,27 +274,27 @@ class Implies(Formula):
     def __str__(self):
         return f"({self.left} → {self.right})"
 
-    def positions(self) -> Set[str]:
+    def positions(self) -> List[List[int]]:
         left_positions = self.left.positions()
         right_positions = self.right.positions()
-        return {""} | {"1." + p for p in left_positions} | {"2." + p for p in right_positions}
+        return [[]] + [[1] + p for p in left_positions] + [[2] + p for p in right_positions]
 
-    def subformula_at(self, pos: str) -> Formula:
-        if pos == "":
+    def subformula_at(self, pos: List[int]) -> Formula:
+        if pos == []:
             return self
-        if pos.startswith("1."):
-            return self.left.subformula_at(pos[2:])
-        if pos.startswith("2."):
-            return self.right.subformula_at(pos[2:])
+        if pos[0] == 1:
+            return self.left.subformula_at(pos[1:])
+        if pos[0] == 2:
+            return self.right.subformula_at(pos[1:])
         raise ValueError(f"Invalid position {pos} for Implies")
 
-    def replace_at_pos(self, pos: str, new_formula: Formula) -> Formula:
-        if pos == "":
+    def replace_at_pos(self, pos: List[int], new_formula: Formula) -> Formula:
+        if pos == []:
             return new_formula
-        if pos.startswith("1."):
-            return Implies(self.left.replace_at_pos(pos[2:], new_formula), self.right)
-        if pos.startswith("2."):
-            return Implies(self.left, self.right.replace_at_pos(pos[2:], new_formula))
+        if pos[0] == 1:
+            return Implies(self.left.replace_at_pos(pos[1:], new_formula), self.right)
+        if pos[0] == 2:
+            return Implies(self.left, self.right.replace_at_pos(pos[1:], new_formula))
         raise ValueError(f"Invalid position {pos} for Implies")
 
 
@@ -325,27 +317,27 @@ class Iff(Formula):
     def __str__(self):
         return f"({self.left} ↔ {self.right})"
 
-    def positions(self) -> Set[str]:
+    def positions(self) -> List[List[int]]:
         left_positions = self.left.positions()
         right_positions = self.right.positions()
-        return {""} | {"1." + p for p in left_positions} | {"2." + p for p in right_positions}
+        return [[]] + [[1] + p for p in left_positions] + [[2] + p for p in right_positions]
 
-    def subformula_at(self, pos: str) -> Formula:
-        if pos == "":
+    def subformula_at(self, pos: List[int]) -> Formula:
+        if pos == []:
             return self
-        if pos.startswith("1."):
-            return self.left.subformula_at(pos[2:])
-        if pos.startswith("2."):
-            return self.right.subformula_at(pos[2:])
+        if pos[0] == 1:
+            return self.left.subformula_at(pos[1:])
+        if pos[0] == 2:
+            return self.right.subformula_at(pos[1:])
         raise ValueError(f"Invalid position {pos} for Iff")
 
-    def replace_at_pos(self, pos: str, new_formula: Formula) -> Formula:
-        if pos == "":
+    def replace_at_pos(self, pos: List[int], new_formula: Formula) -> Formula:
+        if pos == []:
             return new_formula
-        if pos.startswith("1."):
-            return Iff(self.left.replace_at_pos(pos[2:], new_formula), self.right)
-        if pos.startswith("2."):
-            return Iff(self.left, self.right.replace_at_pos(pos[2:], new_formula))
+        if pos[0] == 1:
+            return Iff(self.left.replace_at_pos(pos[1:], new_formula), self.right)
+        if pos[0] == 2:
+            return Iff(self.left, self.right.replace_at_pos(pos[1:], new_formula))
         raise ValueError(f"Invalid position {pos} for Iff")
 
 
