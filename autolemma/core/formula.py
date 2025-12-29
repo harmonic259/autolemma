@@ -1,6 +1,7 @@
 # autolemma/core/formula.py
 from __future__ import annotations
 from dataclasses import dataclass
+from itertools import product
 from typing import Tuple, Iterable, Set, Dict, List, Optional, Iterator
 
 SubstMap = Dict[str, "Formula"]
@@ -37,6 +38,54 @@ class Formula:
     def replace_at_pos(self, pos: List[int], new_formula: "Formula") -> "Formula":
         raise NotImplementedError
 
+    def simplify(self) -> "Formula":
+        raise NotImplementedError
+
+    def evaluate(self, valuation: Dict[str, bool]) -> "Formula":
+        mapping = {k: Const(v) for k, v in valuation.items()}
+        substituted = self.substitute(mapping)
+        return substituted.simplify()
+
+    def models(self) -> List[Dict[str, bool]]:
+        """Return all truth assignments that make the formula true."""
+        vars_list = list(self.free_vars())
+        if not vars_list:
+            # No free variables: check if formula simplifies to True
+            simplified = self.simplify()
+            if isinstance(simplified, Const) and simplified.value:
+                return [{}]
+            else:
+                return []
+        
+        satisfying_assignments = []
+        for combo in product([False, True], repeat=len(vars_list)):
+            val = dict(zip(vars_list, combo))
+            evaled = self.evaluate(val)
+            if isinstance(evaled, Const) and evaled.value:
+                satisfying_assignments.append(val)
+        return satisfying_assignments
+    
+    def eliminate_equiv_and_impl(self) -> "Formula":
+        raise NotImplementedError
+    
+    def distribute(self) -> "Formula":
+        raise NotImplementedError
+
+    def cnf(self) -> "Formula":
+        elim_f = self.eliminate_equiv_and_impl()
+        nnf_f = elim_f.nnf()
+        dist_f = nnf_f.distribute()
+        return dist_f.simplify()
+
+    def polarity(self, pos: List[int]) -> int:
+        """Return the polarity of the subformula at position pos.
+        
+        Polarity is 1 for even number of negations, -1 for odd, 0 if equivalence on path.
+        """
+        raise NotImplementedError
+
+    
+
 
 @dataclass(frozen=True)
 class Var(Formula):
@@ -67,6 +116,20 @@ class Var(Formula):
             return new_formula
         raise ValueError(f"Invalid position {pos} for Var")
 
+    def simplify(self) -> Formula:
+        return self
+
+    def distribute(self) -> Formula:
+        return self
+
+    def eliminate_equiv_and_impl(self) -> Formula:
+        return self
+
+    def polarity(self, pos: List[int]) -> int:
+        if pos == []:
+            return 1
+        raise ValueError(f"Invalid position {pos} for Var")
+
 
 @dataclass(frozen=True)
 class Const(Formula):
@@ -95,6 +158,20 @@ class Const(Formula):
     def replace_at_pos(self, pos: List[int], new_formula: Formula) -> Formula:
         if pos == []:
             return new_formula
+        raise ValueError(f"Invalid position {pos} for Const")
+
+    def simplify(self) -> Formula:
+        return self
+
+    def distribute(self) -> Formula:
+        return self
+
+    def eliminate_equiv_and_impl(self) -> Formula:
+        return self
+
+    def polarity(self, pos: List[int]) -> int:
+        if pos == []:
+            return 1
         raise ValueError(f"Invalid position {pos} for Const")
 
 
@@ -145,6 +222,25 @@ class Not(Formula):
             return new_formula
         if pos[0] == 1:
             return Not(self.child.replace_at_pos(pos[1:], new_formula))
+        raise ValueError(f"Invalid position {pos} for Not")
+
+    def simplify(self) -> Formula:
+        child_s = self.child.simplify()
+        if isinstance(child_s, Const):
+            return Const(not child_s.value)
+        return Not(child_s)
+
+    def distribute(self) -> Formula:
+        return self
+
+    def eliminate_equiv_and_impl(self) -> Formula:
+        return Not(self.child.eliminate_equiv_and_impl())
+
+    def polarity(self, pos: List[int]) -> int:
+        if pos == []:
+            return 1
+        if pos[0] == 1:
+            return -self.child.polarity(pos[1:])
         raise ValueError(f"Invalid position {pos} for Not")
 
 
@@ -201,6 +297,31 @@ class And(Formula):
             return And(*new_children)
         raise ValueError(f"Invalid position {pos} for And")
 
+    def simplify(self) -> Formula:
+        children_s = [c.simplify() for c in self.children]
+        if any(isinstance(c, Const) and not c.value for c in children_s):
+            return Const(False)
+        filtered = [c for c in children_s if not (isinstance(c, Const) and c.value)]
+        if not filtered:
+            return Const(True)
+        if len(filtered) == 1:
+            return filtered[0]
+        return And(*filtered)
+
+    def distribute(self) -> Formula:
+        return And(*(c.distribute() for c in self.children))
+
+    def eliminate_equiv_and_impl(self) -> Formula:
+        return And(*(c.eliminate_equiv_and_impl() for c in self.children))
+
+    def polarity(self, pos: List[int]) -> int:
+        if pos == []:
+            return 1
+        idx = pos[0] - 1
+        if 0 <= idx < len(self.children):
+            return self.children[idx].polarity(pos[1:])
+        raise ValueError(f"Invalid position {pos} for And")
+
 
 @dataclass(frozen=True)
 class Or(Formula):
@@ -255,6 +376,45 @@ class Or(Formula):
             return Or(*new_children)
         raise ValueError(f"Invalid position {pos} for Or")
 
+    def simplify(self) -> Formula:
+        children_s = [c.simplify() for c in self.children]
+        if any(isinstance(c, Const) and c.value for c in children_s):
+            return Const(True)
+        filtered = [c for c in children_s if not (isinstance(c, Const) and not c.value)]
+        if not filtered:
+            return Const(False)
+        if len(filtered) == 1:
+            return filtered[0]
+        return Or(*filtered)
+
+    def distribute(self) -> Formula:
+        distributed_children = [c.distribute() for c in self.children]
+        conjunct_lists = []
+        other_disjuncts = []
+        for c in distributed_children:
+            if isinstance(c, And):
+                conjunct_lists.append(list(c.children))
+            else:
+                other_disjuncts.append(c)
+        if not conjunct_lists:
+            return Or(*distributed_children)
+        cnf_clauses = []
+        for combo in product(*conjunct_lists):
+            clause = list(combo) + other_disjuncts
+            cnf_clauses.append(Or(*clause))
+        return And(*cnf_clauses)
+
+    def eliminate_equiv_and_impl(self) -> Formula:
+        return Or(*(c.eliminate_equiv_and_impl() for c in self.children))
+
+    def polarity(self, pos: List[int]) -> int:
+        if pos == []:
+            return 1
+        idx = pos[0] - 1
+        if 0 <= idx < len(self.children):
+            return self.children[idx].polarity(pos[1:])
+        raise ValueError(f"Invalid position {pos} for Or")
+
 
 @dataclass(frozen=True)
 class Implies(Formula):
@@ -295,6 +455,36 @@ class Implies(Formula):
             return Implies(self.left.replace_at_pos(pos[1:], new_formula), self.right)
         if pos[0] == 2:
             return Implies(self.left, self.right.replace_at_pos(pos[1:], new_formula))
+        raise ValueError(f"Invalid position {pos} for Implies")
+
+    def simplify(self) -> Formula:
+        left_s = self.left.simplify()
+        right_s = self.right.simplify()
+        if isinstance(left_s, Const):
+            if left_s.value:
+                return right_s
+            else:
+                return Const(True)
+        if isinstance(right_s, Const):
+            if right_s.value:
+                return Const(True)
+            else:
+                return Not(left_s)
+        return Implies(left_s, right_s)
+
+    def distribute(self) -> Formula:
+        return self
+
+    def eliminate_equiv_and_impl(self) -> Formula:
+        return Or(Not(self.left), self.right).eliminate_equiv_and_impl()
+
+    def polarity(self, pos: List[int]) -> int:
+        if pos == []:
+            return 1
+        if pos[0] == 1:
+            return -self.left.polarity(pos[1:])
+        if pos[0] == 2:
+            return self.right.polarity(pos[1:])
         raise ValueError(f"Invalid position {pos} for Implies")
 
 
@@ -339,6 +529,34 @@ class Iff(Formula):
         if pos[0] == 2:
             return Iff(self.left, self.right.replace_at_pos(pos[1:], new_formula))
         raise ValueError(f"Invalid position {pos} for Iff")
+
+    def simplify(self) -> Formula:
+        left_s = self.left.simplify()
+        right_s = self.right.simplify()
+        if isinstance(left_s, Const) and isinstance(right_s, Const):
+            return Const(left_s.value == right_s.value)
+        if isinstance(left_s, Const):
+            if left_s.value:
+                return right_s
+            else:
+                return Not(right_s)
+        if isinstance(right_s, Const):
+            if right_s.value:
+                return left_s
+            else:
+                return Not(left_s)
+        return Iff(left_s, right_s)
+
+    def distribute(self) -> Formula:
+        return self
+
+    def eliminate_equiv_and_impl(self) -> Formula:
+        return And(Implies(self.left, self.right), Implies(self.right, self.left)).eliminate_equiv_and_impl()
+
+    def polarity(self, pos: List[int]) -> int:
+        if pos == []:
+            return 1
+        return 0
 
 
 
